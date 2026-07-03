@@ -1,0 +1,3 @@
+username,password,should_work
+standard_user,secret_sauce,True
+standard_user,wrong_password,False

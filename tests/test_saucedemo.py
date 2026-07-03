@@ -1,14 +1,23 @@
 import pytest
 from selenium.webdriver.common.by import By
+from utils.data_reader import read_csv, read_json
 from utils.driver_factory import get_driver
+from page.cart_page import CartPage
+from page.inventory_page import InventoryPage
+from page.login_page import LoginPage
 from utils.helpers import (
-    click_element,
-    fill_text,
     get_text,
     wait_for_element,
     wait_for_visibility,
     take_screenshot
 )
+
+login_data = [
+    (item["username"], item["password"], item["should_work"].lower() == "true")
+    for item in read_csv("login.csv")
+]
+
+product_names = [product["name"] for product in read_json("products.json")["products"]]
 
 
 class TestSauceDemo:
@@ -19,85 +28,59 @@ class TestSauceDemo:
         yield
         self.driver.quit()
     
-    def test_login_successful(self):
-        """Test successful login to SauceDemo"""
-        self.driver.get("https://www.saucedemo.com")
-        
-        username_locator = (By.ID, "user-name")
-        password_locator = (By.ID, "password")
-        login_button_locator = (By.ID, "login-button")
-        
-        fill_text(self.driver, username_locator, "standard_user")
-        fill_text(self.driver, password_locator, "secret_sauce")
-        click_element(self.driver, login_button_locator)
-        
-        wait_for_visibility(self.driver, (By.CLASS_NAME, "title"))
-        
-        assert "/inventory.html" in self.driver.current_url, "URL should contain /inventory.html"
-        
-        page_title = get_text(self.driver, (By.CLASS_NAME, "title"))
-        assert page_title == "Products", "Page title should be 'Products'"
+    @pytest.mark.parametrize("username,password,should_work", login_data)
+    def test_login(self, username, password, should_work):
+        """Test login scenarios using external data"""
+        login_page = LoginPage(self.driver)
+        login_page.login(username, password)
+
+        if should_work:
+            wait_for_visibility(self.driver, (By.CLASS_NAME, "title"))
+            assert "/inventory.html" in self.driver.current_url, "URL should contain /inventory.html"
+            page_title = get_text(self.driver, (By.CLASS_NAME, "title"))
+            assert page_title == "Products", "Page title should be 'Products'"
+        else:
+            error_message = login_page.get_error_message()
+            assert error_message, "Expected an error message for invalid login"
     
     def test_catalog_elements(self):
         """Test catalog page displays products and elements"""
-        self.driver.get("https://www.saucedemo.com")
+        login_page = LoginPage(self.driver)
+        login_page.login("standard_user", "secret_sauce")
         
-        fill_text(self.driver, (By.ID, "user-name"), "standard_user")
-        fill_text(self.driver, (By.ID, "password"), "secret_sauce")
-        click_element(self.driver, (By.ID, "login-button"))
+        inventory_page = InventoryPage(self.driver)
+        inventory_page.wait_until_loaded()
         
-        wait_for_visibility(self.driver, (By.CLASS_NAME, "title"))
-        
-        page_title = get_text(self.driver, (By.CLASS_NAME, "title"))
+        page_title = inventory_page.get_title()
         assert page_title == "Products", "Page title should be 'Products'"
         
-        products = self.driver.find_elements(By.CLASS_NAME, "inventory_item")
-        assert len(products) > 0, "At least one product should be visible"
+        assert inventory_page.get_products_count() > 0, "At least one product should be visible"
         
-        first_product_name = get_text(
-            self.driver,
-            (By.CLASS_NAME, "inventory_item_name")
-        )
+        first_product_name = inventory_page.get_first_product_name()
         assert first_product_name, "First product should have a name"
         
-        first_product_price = get_text(
-            self.driver,
-            (By.CLASS_NAME, "inventory_item_price")
-        )
+        first_product_price = inventory_page.get_first_product_price()
         assert first_product_price, "First product should have a price"
         
-        menu_button = wait_for_element(self.driver, (By.ID, "react-burger-menu-btn"))
-        assert menu_button, "Menu button should be present"
-        
-        filter_select = wait_for_element(self.driver, (By.CLASS_NAME, "product_sort_container"))
-        assert filter_select, "Filter dropdown should be present"
+        assert inventory_page.is_menu_button_present(), "Menu button should be present"
+        assert inventory_page.is_filter_dropdown_present(), "Filter dropdown should be present"
     
-    def test_add_to_cart(self):
-        """Test adding product to cart"""
-        self.driver.get("https://www.saucedemo.com")
+    @pytest.mark.parametrize("product_name", product_names)
+    def test_add_to_cart(self, product_name):
+        """Test adding a product to cart using external product data"""
+        login_page = LoginPage(self.driver)
+        login_page.login("standard_user", "secret_sauce")
         
-        fill_text(self.driver, (By.ID, "user-name"), "standard_user")
-        fill_text(self.driver, (By.ID, "password"), "secret_sauce")
-        click_element(self.driver, (By.ID, "login-button"))
+        inventory_page = InventoryPage(self.driver)
+        inventory_page.wait_until_loaded()
+        inventory_page.add_product_to_cart_by_name(product_name)
         
-        wait_for_visibility(self.driver, (By.CLASS_NAME, "title"))
+        assert inventory_page.get_cart_badge_count() == 1, "Cart badge should show 1 item"
         
-        add_to_cart_button = self.driver.find_element(
-            By.XPATH,
-            "//button[contains(@class, 'btn_primary') and contains(., 'Add to cart')]"
-        )
-        add_to_cart_button.click()
+        inventory_page.open_cart()
         
-        cart_badge = wait_for_element(self.driver, (By.CLASS_NAME, "shopping_cart_badge"))
-        assert cart_badge.text == "1", "Cart badge should show 1 item"
+        cart_page = CartPage(self.driver)
+        cart_page.wait_until_loaded()
         
-        cart_link = self.driver.find_element(By.CLASS_NAME, "shopping_cart_link")
-        cart_link.click()
-        
-        wait_for_visibility(self.driver, (By.CLASS_NAME, "cart_contents_container"))
-        
-        cart_items = self.driver.find_elements(By.CLASS_NAME, "cart_item")
-        assert len(cart_items) == 1, "Cart should contain 1 item"
-        
-        product_in_cart = self.driver.find_element(By.CLASS_NAME, "inventory_item_name")
-        assert product_in_cart, "Product should be visible in cart"
+        assert cart_page.get_cart_items_count() == 1, "Cart should contain 1 item"
+        assert cart_page.get_product_name() == product_name, "Expected correct product in cart"

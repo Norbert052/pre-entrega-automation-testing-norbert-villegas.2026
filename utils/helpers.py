@@ -3,6 +3,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 import os
 from datetime import datetime
+import re
 
 
 def wait_for_element(driver, locator, timeout=10):
@@ -38,11 +39,10 @@ def get_text(driver, locator):
 
 def take_screenshot(driver, test_name):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    screenshot_dir = "reports/screenshots"
-    
-    if not os.path.exists(screenshot_dir):
-        os.makedirs(screenshot_dir)
-    
-    filename = f"{screenshot_dir}/{test_name}_{timestamp}.png"
+    screenshot_dir = "screenshots"
+    os.makedirs(screenshot_dir, exist_ok=True)
+
+    safe_name = re.sub(r"[^\w\-]+", "_", test_name)
+    filename = os.path.join(screenshot_dir, f"{safe_name}_{timestamp}.png")
     driver.save_screenshot(filename)
     return filename
