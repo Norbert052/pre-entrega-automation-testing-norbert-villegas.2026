@@ -1,5 +1,7 @@
 from selenium.webdriver.common.by import By
-from utils.helpers import click_element, get_text, wait_for_element, wait_for_visibility
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+from utils.helpers import click_element, get_text, wait_for_clickable, wait_for_element, wait_for_visibility
 from utils.logger import logger
 
 
@@ -63,4 +65,13 @@ class InventoryPage:
         return int(badge.text)
 
     def open_cart(self):
-        click_element(self.driver, self.CART_LINK)
+        wait = WebDriverWait(self.driver, 15)
+        cart_link = wait.until(EC.element_to_be_clickable(self.CART_LINK))
+        cart_link.click()
+
+        current_url = self.driver.current_url
+        if "/cart.html" not in current_url:
+            self.driver.execute_script("arguments[0].click();", cart_link)
+
+        wait.until(EC.url_contains("/cart.html"))
+        return self.driver.current_url
